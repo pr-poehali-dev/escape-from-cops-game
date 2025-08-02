@@ -61,7 +61,12 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
-				}
+				},
+				'prison-black': '#1A1A1A',
+				'danger-red': '#FF4444',
+				'laser-green': '#00FF88',
+				'prison-gray': '#666666',
+				'cell-dark': '#2A2A2A'
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
