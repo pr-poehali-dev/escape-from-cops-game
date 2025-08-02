@@ -1,301 +1,368 @@
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import Icon from "@/components/ui/icon"
+import React, { useState, useEffect, useCallback } from 'react';
+import { Button } from "@/components/ui/button";
+import Icon from "@/components/ui/icon";
 
-export default function Index() {
-  const levels = [
-    {
-      id: 1,
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface Laser {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  direction: 'horizontal' | 'vertical';
+  active: boolean;
+}
+
+interface Enemy {
+  x: number;
+  y: number;
+  direction: number;
+  speed: number;
+  patrolDistance: number;
+  startX: number;
+}
+
+export default function PrisonEscapeGame() {
+  const [gameState, setGameState] = useState<'menu' | 'playing' | 'gameOver' | 'victory'>('menu');
+  const [currentLevel, setCurrentLevel] = useState(1);
+  const [playerPos, setPlayerPos] = useState<Position>({ x: 50, y: 450 });
+  const [keys, setKeys] = useState<{[key: string]: boolean}>({});
+  const [health, setHealth] = useState(100);
+  const [score, setScore] = useState(0);
+  
+  // Препятствия для разных уровней
+  const levels = {
+    1: {
       name: "Побег из камеры",
-      difficulty: "Легкий",
-      description: "Ваше первое испытание. Найдите способ выбраться из тюремной камеры через вентиляцию.",
-      obstacles: ["Решетки", "Тихий режим", "Охранники"],
-      completed: false
+      lasers: [
+        { x: 200, y: 200, width: 300, height: 5, direction: 'horizontal' as const, active: true },
+        { x: 400, y: 350, width: 5, height: 200, direction: 'vertical' as const, active: true }
+      ],
+      enemies: [
+        { x: 600, y: 400, direction: 1, speed: 1, patrolDistance: 150, startX: 600 }
+      ],
+      exitPos: { x: 750, y: 50 }
     },
-    {
-      id: 2,
-      name: "Лазерные ловушки",
-      difficulty: "Средний", 
-      description: "Пройдите через коридор с лазерными системами безопасности. Одно неверное движение - и вас поймают.",
-      obstacles: ["Лазеры", "Паркур", "Датчики движения"],
-      completed: false
+    2: {
+      name: "Лазерные коридоры", 
+      lasers: [
+        { x: 150, y: 150, width: 400, height: 5, direction: 'horizontal' as const, active: true },
+        { x: 300, y: 250, width: 5, height: 150, direction: 'vertical' as const, active: true },
+        { x: 500, y: 350, width: 200, height: 5, direction: 'horizontal' as const, active: true }
+      ],
+      enemies: [
+        { x: 300, y: 300, direction: 1, speed: 1.5, patrolDistance: 200, startX: 300 },
+        { x: 550, y: 200, direction: -1, speed: 1, patrolDistance: 100, startX: 550 }
+      ],
+      exitPos: { x: 750, y: 100 }
     },
-    {
-      id: 3,
+    3: {
       name: "Битва с боссом",
-      difficulty: "Сложный",
-      description: "Финальное противостояние со злым главным надзирателем. Используйте все свои навыки для победы.",
-      obstacles: ["Босс-полицейский", "Ловушки", "Ограниченное время"],
-      completed: false
+      lasers: [
+        { x: 200, y: 200, width: 5, height: 300, direction: 'vertical' as const, active: true },
+        { x: 400, y: 300, width: 300, height: 5, direction: 'horizontal' as const, active: true },
+        { x: 600, y: 150, width: 5, height: 250, direction: 'vertical' as const, active: true }
+      ],
+      enemies: [
+        { x: 400, y: 250, direction: 1, speed: 2, patrolDistance: 300, startX: 400 } // Босс
+      ],
+      exitPos: { x: 750, y: 50 }
     }
-  ]
+  };
 
-  const features = [
-    {
-      icon: "ShieldX",
-      title: "Тюремная атмосфера",
-      description: "Мрачные коридоры и камеры создают аутентичную атмосферу побега"
-    },
-    {
-      icon: "Zap", 
-      title: "Лазерные ловушки",
-      description: "Множество препятствий и ловушек на вашем пути к свободе"
-    },
-    {
-      icon: "Target",
-      title: "Паркур система",
-      description: "Прыжки, лазание и акробатические трюки для преодоления препятствий"
-    },
-    {
-      icon: "Skull",
-      title: "Битва с боссом",
-      description: "Эпичное противостояние с главным антагонистом игры"
+  const [enemies, setEnemies] = useState<Enemy[]>(levels[currentLevel as keyof typeof levels].enemies);
+
+  // Управление клавишами
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      setKeys(prev => ({ ...prev, [e.key.toLowerCase()]: true }));
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      setKeys(prev => ({ ...prev, [e.key.toLowerCase()]: false }));
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Движение игрока
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+
+    const movePlayer = () => {
+      setPlayerPos(prev => {
+        let newX = prev.x;
+        let newY = prev.y;
+        const speed = 3;
+
+        if (keys['a'] || keys['arrowleft']) newX = Math.max(0, newX - speed);
+        if (keys['d'] || keys['arrowright']) newX = Math.min(750, newX + speed);
+        if (keys['w'] || keys['arrowup']) newY = Math.max(0, newY - speed);
+        if (keys['s'] || keys['arrowdown']) newY = Math.min(450, newY + speed);
+
+        return { x: newX, y: newY };
+      });
+    };
+
+    const interval = setInterval(movePlayer, 16);
+    return () => clearInterval(interval);
+  }, [keys, gameState]);
+
+  // Движение врагов
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+
+    const moveEnemies = () => {
+      setEnemies(prev => prev.map(enemy => {
+        let newX = enemy.x + (enemy.direction * enemy.speed);
+        let newDirection = enemy.direction;
+
+        if (newX <= enemy.startX - enemy.patrolDistance || newX >= enemy.startX + enemy.patrolDistance) {
+          newDirection = -enemy.direction;
+          newX = enemy.x + (newDirection * enemy.speed);
+        }
+
+        return { ...enemy, x: newX, direction: newDirection };
+      }));
+    };
+
+    const interval = setInterval(moveEnemies, 50);
+    return () => clearInterval(interval);
+  }, [gameState]);
+
+  // Проверка коллизий
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+
+    const checkCollisions = () => {
+      const level = levels[currentLevel as keyof typeof levels];
+      
+      // Проверка лазеров
+      level.lasers.forEach(laser => {
+        if (laser.active) {
+          const collision = laser.direction === 'horizontal' 
+            ? playerPos.x + 20 > laser.x && playerPos.x < laser.x + laser.width && 
+              playerPos.y + 20 > laser.y && playerPos.y < laser.y + laser.height
+            : playerPos.x + 20 > laser.x && playerPos.x < laser.x + laser.width && 
+              playerPos.y + 20 > laser.y && playerPos.y < laser.y + laser.height;
+
+          if (collision) {
+            setHealth(prev => Math.max(0, prev - 2));
+          }
+        }
+      });
+
+      // Проверка врагов
+      enemies.forEach(enemy => {
+        const distance = Math.sqrt(
+          Math.pow(playerPos.x - enemy.x, 2) + Math.pow(playerPos.y - enemy.y, 2)
+        );
+        
+        if (distance < 30) {
+          setHealth(prev => Math.max(0, prev - 3));
+        }
+      });
+
+      // Проверка выхода
+      const exitDistance = Math.sqrt(
+        Math.pow(playerPos.x - level.exitPos.x, 2) + Math.pow(playerPos.y - level.exitPos.y, 2)
+      );
+      
+      if (exitDistance < 40) {
+        if (currentLevel === 3) {
+          setGameState('victory');
+          setScore(prev => prev + 1000);
+        } else {
+          setCurrentLevel(prev => prev + 1);
+          setPlayerPos({ x: 50, y: 450 });
+          setEnemies(levels[(currentLevel + 1) as keyof typeof levels].enemies);
+          setScore(prev => prev + 500);
+          setHealth(prev => Math.min(100, prev + 25));
+        }
+      }
+    };
+
+    const interval = setInterval(checkCollisions, 50);
+    return () => clearInterval(interval);
+  }, [playerPos, enemies, currentLevel, gameState]);
+
+  // Проверка смерти
+  useEffect(() => {
+    if (health <= 0) {
+      setGameState('gameOver');
     }
-  ]
+  }, [health]);
+
+  const startGame = () => {
+    setGameState('playing');
+    setCurrentLevel(1);
+    setPlayerPos({ x: 50, y: 450 });
+    setHealth(100);
+    setScore(0);
+    setEnemies(levels[1].enemies);
+  };
+
+  const resetGame = () => {
+    setGameState('menu');
+    setCurrentLevel(1);
+    setPlayerPos({ x: 50, y: 450 });
+    setHealth(100);
+    setScore(0);
+    setEnemies(levels[1].enemies);
+  };
+
+  if (gameState === 'menu') {
+    return (
+      <div className="min-h-screen bg-prison-black flex items-center justify-center">
+        <div className="text-center text-white">
+          <h1 className="font-title text-6xl font-bold mb-8 text-danger-red">PRISON ESCAPE</h1>
+          <p className="text-xl mb-8 text-gray-300">Убегайте от полицейских, избегайте лазеров, победите босса!</p>
+          <div className="space-y-4 mb-8">
+            <p className="text-gray-400">Управление: WASD или стрелки</p>
+            <p className="text-gray-400">Избегайте красных лазеров и врагов</p>
+            <p className="text-gray-400">Доберитесь до зеленого выхода</p>
+          </div>
+          <Button onClick={startGame} className="bg-danger-red hover:bg-danger-red/80 text-white font-semibold text-xl px-8 py-4">
+            <Icon name="Play" className="mr-2" size={24} />
+            Начать побег
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (gameState === 'gameOver') {
+    return (
+      <div className="min-h-screen bg-prison-black flex items-center justify-center">
+        <div className="text-center text-white">
+          <h1 className="font-title text-6xl font-bold mb-8 text-danger-red">ПОЙМАЛИ!</h1>
+          <p className="text-xl mb-4">Очки: {score}</p>
+          <p className="text-xl mb-8">Уровень: {currentLevel}</p>
+          <div className="space-x-4">
+            <Button onClick={startGame} className="bg-danger-red hover:bg-danger-red/80 text-white font-semibold">
+              Попробовать снова
+            </Button>
+            <Button onClick={resetGame} variant="outline" className="border-gray-500 text-gray-300">
+              В меню
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (gameState === 'victory') {
+    return (
+      <div className="min-h-screen bg-prison-black flex items-center justify-center">
+        <div className="text-center text-white">
+          <h1 className="font-title text-6xl font-bold mb-8 text-laser-green">СВОБОДА!</h1>
+          <p className="text-xl mb-4">Вы победили босса и сбежали!</p>
+          <p className="text-xl mb-4">Итоговые очки: {score}</p>
+          <p className="text-gray-300 mb-8">Теперь можете ехать домой в пустыню!</p>
+          <Button onClick={resetGame} className="bg-laser-green hover:bg-laser-green/80 text-prison-black font-semibold">
+            Играть заново
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const level = levels[currentLevel as keyof typeof levels];
 
   return (
-    <div className="min-h-screen bg-prison-black text-white">
-      {/* Header */}
-      <header className="border-b border-prison-gray/30 bg-prison-black/90 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Icon name="ShieldX" size={32} className="text-danger-red" />
-              <h1 className="font-title text-2xl font-bold">PRISON ESCAPE</h1>
-            </div>
-            <nav className="hidden md:flex items-center space-x-6">
-              <a href="#gameplay" className="hover:text-danger-red transition-colors">Геймплей</a>
-              <a href="#levels" className="hover:text-danger-red transition-colors">Уровни</a>  
-              <a href="#screenshots" className="hover:text-danger-red transition-colors">Скриншоты</a>
-              <Button className="bg-danger-red hover:bg-danger-red/80 text-white font-semibold">
-                Скачать игру
-              </Button>
-            </nav>
-          </div>
+    <div className="min-h-screen bg-prison-black text-white overflow-hidden">
+      {/* HUD */}
+      <div className="absolute top-4 left-4 z-10 space-y-2">
+        <div className="bg-black/80 px-4 py-2 rounded">
+          <p className="font-title text-lg">Уровень: {currentLevel} - {level.name}</p>
         </div>
-      </header>
+        <div className="bg-black/80 px-4 py-2 rounded">
+          <p>Здоровье: <span className="text-danger-red">{health}%</span></p>
+        </div>
+        <div className="bg-black/80 px-4 py-2 rounded">
+          <p>Очки: <span className="text-laser-green">{score}</span></p>
+        </div>
+      </div>
 
-      {/* Hero Section */}
-      <section className="relative py-20 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-prison-black via-cell-dark to-prison-black opacity-90"></div>
-        <div className="container mx-auto px-4 relative z-10">
-          <div className="text-center max-w-4xl mx-auto">
-            <h1 className="font-title text-6xl md:text-8xl font-bold mb-6 bg-gradient-to-r from-white via-prison-gray to-danger-red bg-clip-text text-transparent">
-              PRISON ESCAPE
-            </h1>
-            <p className="text-xl md:text-2xl text-gray-300 mb-8 leading-relaxed">
-              Самый захватывающий побег из тюрьмы! Пройдите через лазерные ловушки, 
-              преодолейте паркур препятствия и сразитесь с главным босс-полицейским.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-              <Button size="lg" className="bg-danger-red hover:bg-danger-red/80 text-white font-semibold px-8 py-3 text-lg">
-                <Icon name="Download" className="mr-2" size={20} />
-                Скачать сейчас
-              </Button>
-              <Button size="lg" variant="outline" className="border-laser-green text-laser-green hover:bg-laser-green hover:text-prison-black font-semibold px-8 py-3 text-lg">
-                <Icon name="Play" className="mr-2" size={20} />
-                Смотреть трейлер
-              </Button>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Игровое поле */}
+      <div className="relative w-full h-screen bg-gradient-to-b from-cell-dark to-prison-black">
+        
+        {/* Лазеры */}
+        {level.lasers.map((laser, index) => (
+          <div
+            key={index}
+            className={`absolute bg-danger-red ${laser.active ? 'opacity-80' : 'opacity-20'}`}
+            style={{
+              left: laser.x,
+              top: laser.y,
+              width: laser.width,
+              height: laser.height,
+              boxShadow: laser.active ? '0 0 20px #FF4444' : 'none'
+            }}
+          />
+        ))}
 
-      {/* Features Section */}
-      <section id="gameplay" className="py-20 bg-cell-dark/50">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="font-title text-4xl md:text-5xl font-bold mb-4">Особенности игры</h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-              Уникальный геймплей, сочетающий стелс, паркур и экшн элементы
-            </p>
+        {/* Враги */}
+        {enemies.map((enemy, index) => (
+          <div
+            key={index}
+            className="absolute w-8 h-8 bg-yellow-500 rounded-full border-2 border-yellow-300"
+            style={{
+              left: enemy.x,
+              top: enemy.y,
+              boxShadow: '0 0 10px #FFC107'
+            }}
+          >
+            <div className="w-full h-full flex items-center justify-center text-xs">👮</div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {features.map((feature, index) => (
-              <Card key={index} className="bg-prison-black/60 border-prison-gray/30 hover:border-danger-red/50 transition-all duration-300 hover:scale-105">
-                <CardHeader className="text-center pb-4">
-                  <div className="w-16 h-16 mx-auto bg-danger-red/20 rounded-full flex items-center justify-center mb-4">
-                    <Icon name={feature.icon as any} size={32} className="text-danger-red" />
-                  </div>
-                  <CardTitle className="font-title text-xl text-white">{feature.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <CardDescription className="text-gray-400 text-center">
-                    {feature.description}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
+        ))}
 
-      {/* Levels Section */}
-      <section id="levels" className="py-20">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="font-title text-4xl md:text-5xl font-bold mb-4">Уровни испытаний</h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-              Каждый уровень - это новый вызов с уникальными препятствиями и головоломками
-            </p>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {levels.map((level) => (
-              <Card key={level.id} className="bg-gradient-to-b from-cell-dark to-prison-black border-prison-gray/30 hover:border-laser-green/50 transition-all duration-300">
-                <CardHeader>
-                  <div className="flex items-center justify-between mb-2">
-                    <Badge 
-                      variant={level.difficulty === "Легкий" ? "secondary" : level.difficulty === "Средний" ? "default" : "destructive"}
-                      className={level.difficulty === "Легкий" ? "bg-laser-green text-prison-black" : level.difficulty === "Средний" ? "bg-yellow-500 text-prison-black" : "bg-danger-red text-white"}
-                    >
-                      {level.difficulty}
-                    </Badge>
-                    <span className="text-prison-gray text-sm">Уровень {level.id}</span>
-                  </div>
-                  <CardTitle className="font-title text-2xl text-white">{level.name}</CardTitle>
-                  <CardDescription className="text-gray-400">
-                    {level.description}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div>
-                      <h4 className="font-semibold text-white mb-2">Препятствия:</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {level.obstacles.map((obstacle, index) => (
-                          <Badge key={index} variant="outline" className="border-danger-red/50 text-danger-red">
-                            {obstacle}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                    <Button 
-                      className="w-full bg-prison-gray hover:bg-danger-red transition-colors"
-                      disabled={level.completed}
-                    >
-                      {level.completed ? "Пройден" : "Играть уровень"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+        {/* Игрок */}
+        <div
+          className="absolute w-6 h-6 bg-blue-500 rounded border-2 border-blue-300 transition-all duration-75"
+          style={{
+            left: playerPos.x,
+            top: playerPos.y,
+            boxShadow: '0 0 10px #3B82F6'
+          }}
+        >
+          <div className="w-full h-full flex items-center justify-center text-xs">🏃</div>
         </div>
-      </section>
 
-      {/* Screenshots Section */}
-      <section id="screenshots" className="py-20 bg-cell-dark/30">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="font-title text-4xl md:text-5xl font-bold mb-4">Скриншоты игры</h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-              Погрузитесь в атмосферу мрачной тюрьмы и адреналина побега
-            </p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="relative group cursor-pointer overflow-hidden rounded-lg border border-prison-gray/30 hover:border-danger-red/50 transition-all duration-300">
-              <img 
-                src="/img/513f2bba-2be6-4d02-bb1f-1ac1b2bc72d9.jpg" 
-                alt="Тюремная камера" 
-                className="aspect-video object-cover w-full"
-              />
-              <div className="absolute inset-0 bg-danger-red/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                <Icon name="ZoomIn" size={32} className="text-white" />
-              </div>
-            </div>
-            <div className="relative group cursor-pointer overflow-hidden rounded-lg border border-prison-gray/30 hover:border-danger-red/50 transition-all duration-300">
-              <img 
-                src="/img/5b635a72-8706-4f3d-9415-f68ddf110ee6.jpg" 
-                alt="Лазерные ловушки" 
-                className="aspect-video object-cover w-full"
-              />
-              <div className="absolute inset-0 bg-danger-red/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                <Icon name="ZoomIn" size={32} className="text-white" />
-              </div>
-            </div>
-            <div className="relative group cursor-pointer overflow-hidden rounded-lg border border-prison-gray/30 hover:border-danger-red/50 transition-all duration-300">
-              <img 
-                src="/img/46067fef-0807-475b-931d-9d3bfc4387ce.jpg" 
-                alt="Босс-полицейский" 
-                className="aspect-video object-cover w-full"
-              />
-              <div className="absolute inset-0 bg-danger-red/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                <Icon name="ZoomIn" size={32} className="text-white" />
-              </div>
-            </div>
-            {[4, 5, 6].map((i) => (
-              <div key={i} className="relative group cursor-pointer overflow-hidden rounded-lg border border-prison-gray/30 hover:border-danger-red/50 transition-all duration-300">
-                <div className="aspect-video bg-gradient-to-br from-prison-black via-cell-dark to-prison-gray flex items-center justify-center">
-                  <div className="text-center">
-                    <Icon name="Image" size={48} className="text-prison-gray mx-auto mb-2" />
-                    <p className="text-prison-gray text-sm">Скриншот {i}</p>
-                  </div>
-                </div>
-                <div className="absolute inset-0 bg-danger-red/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                  <Icon name="ZoomIn" size={32} className="text-white" />
-                </div>
-              </div>
-            ))}
-          </div>
+        {/* Выход */}
+        <div
+          className="absolute w-12 h-12 bg-laser-green rounded-full border-4 border-green-300"
+          style={{
+            left: level.exitPos.x,
+            top: level.exitPos.y,
+            boxShadow: '0 0 30px #00FF88'
+          }}
+        >
+          <div className="w-full h-full flex items-center justify-center text-xl">🚪</div>
         </div>
-      </section>
 
-      {/* CTA Section */}
-      <section className="py-20 bg-gradient-to-r from-prison-black via-danger-red/20 to-prison-black">
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="font-title text-4xl md:text-5xl font-bold mb-6">Готовы к побегу?</h2>
-          <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
-            Скачайте Prison Escape прямо сейчас и испытайте самый захватывающий побег в своей жизни!
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Button size="lg" className="bg-danger-red hover:bg-danger-red/80 text-white font-semibold px-12 py-4 text-xl">
-              <Icon name="Download" className="mr-2" size={24} />
-              Скачать бесплатно
-            </Button>
-            <div className="text-sm text-gray-400">
-              <p>Доступно для Windows, Mac, Linux</p>
-              <p>Размер: 2.5 GB</p>
-            </div>
-          </div>
-        </div>
-      </section>
+        {/* Препятствия (стены) */}
+        <div className="absolute bottom-0 left-0 w-full h-4 bg-prison-gray"></div>
+        <div className="absolute top-0 left-0 w-full h-4 bg-prison-gray"></div>
+        <div className="absolute top-0 left-0 w-4 h-full bg-prison-gray"></div>
+        <div className="absolute top-0 right-0 w-4 h-full bg-prison-gray"></div>
+      </div>
 
-      {/* Footer */}
-      <footer className="border-t border-prison-gray/30 py-12 bg-prison-black">
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div>
-              <div className="flex items-center space-x-2 mb-4">
-                <Icon name="ShieldX" size={24} className="text-danger-red" />
-                <span className="font-title text-xl font-bold">PRISON ESCAPE</span>
-              </div>
-              <p className="text-gray-400">
-                Самая захватывающая игра про побег из тюрьмы с элементами паркура и стелса.
-              </p>
-            </div>
-            <div>
-              <h3 className="font-title text-lg font-semibold mb-4">Игра</h3>
-              <ul className="space-y-2 text-gray-400">
-                <li><a href="#" className="hover:text-white transition-colors">Системные требования</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Обновления</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Поддержка</a></li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-title text-lg font-semibold mb-4">Разработчики</h3>
-              <ul className="space-y-2 text-gray-400">
-                <li><a href="#" className="hover:text-white transition-colors">О нас</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Контакты</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Другие игры</a></li>
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-prison-gray/30 mt-8 pt-8 text-center text-gray-400">
-            <p>&copy; 2024 Prison Escape Game. Все права защищены.</p>
-          </div>
-        </div>
-      </footer>
+      {/* Инструкции */}
+      <div className="absolute bottom-4 left-4 bg-black/80 px-4 py-2 rounded text-sm">
+        <p>WASD / Стрелки - движение</p>
+        <p>Избегайте <span className="text-danger-red">красных лазеров</span> и <span className="text-yellow-500">полицейских</span></p>
+        <p>Доберитесь до <span className="text-laser-green">зеленого выхода</span></p>
+      </div>
     </div>
-  )
+  );
 }
