@@ -1,450 +1,275 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import Icon from "@/components/ui/icon";
+import { useToast } from "@/hooks/use-toast";
 
-interface Position {
-  x: number;
-  y: number;
+interface Buba {
+  id: string;
+  name: string;
+  emoji: string;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  clickPower: number;
+  color: string;
 }
 
-interface Laser {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  direction: 'horizontal' | 'vertical';
-  active: boolean;
+interface PlayerBuba extends Buba {
+  count: number;
 }
 
-interface Enemy {
-  x: number;
-  y: number;
-  direction: number;
-  speed: number;
-  patrolDistance: number;
-  startX: number;
-}
+const BUBAS: Buba[] = [
+  { id: '1', name: 'Обычный Буба', emoji: '🐱', rarity: 'common', clickPower: 1, color: 'bg-gray-500' },
+  { id: '2', name: 'Радостный Буба', emoji: '😺', rarity: 'common', clickPower: 1, color: 'bg-gray-500' },
+  { id: '3', name: 'Сонный Буба', emoji: '😴', rarity: 'common', clickPower: 2, color: 'bg-gray-400' },
+  { id: '4', name: 'Злой Буба', emoji: '😾', rarity: 'rare', clickPower: 5, color: 'bg-blue-500' },
+  { id: '5', name: 'Крутой Буба', emoji: '😎', rarity: 'rare', clickPower: 8, color: 'bg-blue-600' },
+  { id: '6', name: 'Умный Буба', emoji: '🤓', rarity: 'rare', clickPower: 10, color: 'bg-blue-700' },
+  { id: '7', name: 'Космо Буба', emoji: '🚀', rarity: 'epic', clickPower: 25, color: 'bg-purple-500' },
+  { id: '8', name: 'Король Буба', emoji: '👑', rarity: 'epic', clickPower: 50, color: 'bg-purple-600' },
+  { id: '9', name: 'Волшебный Буба', emoji: '🪄', rarity: 'epic', clickPower: 75, color: 'bg-purple-700' },
+  { id: '10', name: 'Золотой Буба', emoji: '✨', rarity: 'legendary', clickPower: 200, color: 'bg-yellow-500' },
+  { id: '11', name: 'Алмазный Буба', emoji: '💎', rarity: 'legendary', clickPower: 500, color: 'bg-cyan-500' },
+  { id: '12', name: 'Радужный Буба', emoji: '🌈', rarity: 'legendary', clickPower: 1000, color: 'bg-gradient-to-r from-red-500 via-yellow-500 to-purple-500' },
+];
 
-export default function PrisonEscapeGame() {
-  const [gameState, setGameState] = useState<'menu' | 'playing' | 'gameOver' | 'victory'>('menu');
-  const [currentLevel, setCurrentLevel] = useState(1);
-  const [playerPos, setPlayerPos] = useState<Position>({ x: 50, y: 450 });
-  const [keys, setKeys] = useState<{[key: string]: boolean}>({});
-  const [health, setHealth] = useState(100);
-  const [score, setScore] = useState(0);
-  
-  // Препятствия для разных уровней
-  const levels = {
-    1: {
-      name: "Побег из камеры",
-      lasers: [
-        { x: 200, y: 200, width: 300, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 400, y: 350, width: 5, height: 200, direction: 'vertical' as const, active: true }
-      ],
-      enemies: [
-        { x: 600, y: 400, direction: 1, speed: 1, patrolDistance: 150, startX: 600 }
-      ],
-      exitPos: { x: 750, y: 50 }
-    },
-    2: {
-      name: "Вентиляционные шахты", 
-      lasers: [
-        { x: 100, y: 100, width: 200, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 400, y: 150, width: 5, height: 100, direction: 'vertical' as const, active: true },
-        { x: 300, y: 300, width: 250, height: 5, direction: 'horizontal' as const, active: true }
-      ],
-      enemies: [
-        { x: 200, y: 250, direction: 1, speed: 1.2, patrolDistance: 180, startX: 200 },
-        { x: 500, y: 200, direction: -1, speed: 1, patrolDistance: 120, startX: 500 }
-      ],
-      exitPos: { x: 750, y: 80 }
-    },
-    3: {
-      name: "Лазерные коридоры", 
-      lasers: [
-        { x: 150, y: 150, width: 400, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 300, y: 250, width: 5, height: 150, direction: 'vertical' as const, active: true },
-        { x: 500, y: 350, width: 200, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 200, y: 400, width: 5, height: 100, direction: 'vertical' as const, active: true }
-      ],
-      enemies: [
-        { x: 300, y: 300, direction: 1, speed: 1.5, patrolDistance: 200, startX: 300 },
-        { x: 550, y: 200, direction: -1, speed: 1, patrolDistance: 100, startX: 550 },
-        { x: 150, y: 350, direction: 1, speed: 1.3, patrolDistance: 160, startX: 150 }
-      ],
-      exitPos: { x: 750, y: 100 }
-    },
-    4: {
-      name: "Паркур секция",
-      lasers: [
-        { x: 120, y: 180, width: 150, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 350, y: 100, width: 5, height: 200, direction: 'vertical' as const, active: true },
-        { x: 450, y: 320, width: 200, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 600, y: 150, width: 5, height: 180, direction: 'vertical' as const, active: true }
-      ],
-      enemies: [
-        { x: 200, y: 300, direction: 1, speed: 1.8, patrolDistance: 220, startX: 200 },
-        { x: 450, y: 180, direction: -1, speed: 1.4, patrolDistance: 140, startX: 450 },
-        { x: 100, y: 400, direction: 1, speed: 1.6, patrolDistance: 180, startX: 100 }
-      ],
-      exitPos: { x: 720, y: 60 }
-    },
-    5: {
-      name: "Охранная комната",
-      lasers: [
-        { x: 180, y: 120, width: 300, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 250, y: 200, width: 5, height: 150, direction: 'vertical' as const, active: true },
-        { x: 400, y: 280, width: 250, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 500, y: 100, width: 5, height: 200, direction: 'vertical' as const, active: true },
-        { x: 100, y: 350, width: 200, height: 5, direction: 'horizontal' as const, active: true }
-      ],
-      enemies: [
-        { x: 300, y: 250, direction: 1, speed: 2, patrolDistance: 250, startX: 300 },
-        { x: 150, y: 180, direction: -1, speed: 1.5, patrolDistance: 120, startX: 150 },
-        { x: 550, y: 320, direction: 1, speed: 1.7, patrolDistance: 160, startX: 550 },
-        { x: 400, y: 150, direction: -1, speed: 1.3, patrolDistance: 100, startX: 400 }
-      ],
-      exitPos: { x: 700, y: 80 }
-    },
-    6: {
-      name: "Лабиринт ловушек",
-      lasers: [
-        { x: 100, y: 100, width: 150, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 300, y: 80, width: 5, height: 120, direction: 'vertical' as const, active: true },
-        { x: 350, y: 180, width: 200, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 180, y: 250, width: 5, height: 100, direction: 'vertical' as const, active: true },
-        { x: 450, y: 280, width: 150, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 250, y: 380, width: 300, height: 5, direction: 'horizontal' as const, active: true }
-      ],
-      enemies: [
-        { x: 200, y: 200, direction: 1, speed: 1.9, patrolDistance: 180, startX: 200 },
-        { x: 400, y: 120, direction: -1, speed: 1.6, patrolDistance: 140, startX: 400 },
-        { x: 500, y: 350, direction: 1, speed: 1.4, patrolDistance: 120, startX: 500 },
-        { x: 100, y: 300, direction: -1, speed: 1.7, patrolDistance: 160, startX: 100 },
-        { x: 600, y: 200, direction: 1, speed: 1.5, patrolDistance: 100, startX: 600 }
-      ],
-      exitPos: { x: 750, y: 50 }
-    },
-    7: {
-      name: "Битва с боссом",
-      lasers: [
-        { x: 200, y: 200, width: 5, height: 300, direction: 'vertical' as const, active: true },
-        { x: 400, y: 300, width: 300, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 600, y: 150, width: 5, height: 250, direction: 'vertical' as const, active: true },
-        { x: 150, y: 100, width: 400, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 300, y: 400, width: 200, height: 5, direction: 'horizontal' as const, active: true }
-      ],
-      enemies: [
-        { x: 400, y: 250, direction: 1, speed: 2.5, patrolDistance: 350, startX: 400 } // Главный босс
-      ],
-      exitPos: { x: 750, y: 50 }
-    },
-    8: {
-      name: "Побег в пустыню",
-      lasers: [
-        { x: 120, y: 150, width: 200, height: 5, direction: 'horizontal' as const, active: true },
-        { x: 400, y: 100, width: 5, height: 180, direction: 'vertical' as const, active: true },
-        { x: 500, y: 300, width: 180, height: 5, direction: 'horizontal' as const, active: true }
-      ],
-      enemies: [
-        { x: 250, y: 280, direction: 1, speed: 1.2, patrolDistance: 150, startX: 250 },
-        { x: 550, y: 180, direction: -1, speed: 1, patrolDistance: 100, startX: 550 }
-      ],
-      exitPos: { x: 750, y: 400 } // Выход в пустыню внизу
-    }
-  };
+const CASE_COST = 100;
 
-  const [enemies, setEnemies] = useState<Enemy[]>(levels[currentLevel as keyof typeof levels].enemies);
+const RARITY_CHANCES = {
+  common: 60,
+  rare: 25,
+  epic: 12,
+  legendary: 3
+};
 
-  // Управление клавишами
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      setKeys(prev => ({ ...prev, [e.key.toLowerCase()]: true }));
-    };
+export default function BubaClicker() {
+  const [clicks, setClicks] = useState(0);
+  const [totalClicks, setTotalClicks] = useState(0);
+  const [inventory, setInventory] = useState<PlayerBuba[]>([]);
+  const [clickAnimation, setClickAnimation] = useState(false);
+  const [floatingNumbers, setFloatingNumbers] = useState<Array<{id: number, value: number, x: number, y: number}>>([]);
+  const [caseOpening, setCaseOpening] = useState(false);
+  const [openedBuba, setOpenedBuba] = useState<Buba | null>(null);
+  const { toast } = useToast();
 
-    const handleKeyUp = (e: KeyboardEvent) => {
-      setKeys(prev => ({ ...prev, [e.key.toLowerCase()]: false }));
-    };
+  const clickPowerPerClick = inventory.reduce((sum, buba) => sum + (buba.clickPower * buba.count), 0) || 1;
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const power = clickPowerPerClick;
+    setClicks(prev => prev + power);
+    setTotalClicks(prev => prev + power);
+    setClickAnimation(true);
+    setTimeout(() => setClickAnimation(false), 100);
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
     
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
+    const newFloat = {
+      id: Date.now(),
+      value: power,
+      x,
+      y
     };
-  }, []);
+    
+    setFloatingNumbers(prev => [...prev, newFloat]);
+    setTimeout(() => {
+      setFloatingNumbers(prev => prev.filter(f => f.id !== newFloat.id));
+    }, 1000);
+  };
 
-  // Движение игрока
-  useEffect(() => {
-    if (gameState !== 'playing') return;
-
-    const movePlayer = () => {
-      setPlayerPos(prev => {
-        let newX = prev.x;
-        let newY = prev.y;
-        const speed = 3;
-
-        if (keys['a'] || keys['arrowleft']) newX = Math.max(0, newX - speed);
-        if (keys['d'] || keys['arrowright']) newX = Math.min(750, newX + speed);
-        if (keys['w'] || keys['arrowup']) newY = Math.max(0, newY - speed);
-        if (keys['s'] || keys['arrowdown']) newY = Math.min(450, newY + speed);
-
-        return { x: newX, y: newY };
-      });
-    };
-
-    const interval = setInterval(movePlayer, 16);
-    return () => clearInterval(interval);
-  }, [keys, gameState]);
-
-  // Движение врагов
-  useEffect(() => {
-    if (gameState !== 'playing') return;
-
-    const moveEnemies = () => {
-      setEnemies(prev => prev.map(enemy => {
-        let newX = enemy.x + (enemy.direction * enemy.speed);
-        let newDirection = enemy.direction;
-
-        if (newX <= enemy.startX - enemy.patrolDistance || newX >= enemy.startX + enemy.patrolDistance) {
-          newDirection = -enemy.direction;
-          newX = enemy.x + (newDirection * enemy.speed);
-        }
-
-        return { ...enemy, x: newX, direction: newDirection };
-      }));
-    };
-
-    const interval = setInterval(moveEnemies, 50);
-    return () => clearInterval(interval);
-  }, [gameState]);
-
-  // Проверка коллизий
-  useEffect(() => {
-    if (gameState !== 'playing') return;
-
-    const checkCollisions = () => {
-      const level = levels[currentLevel as keyof typeof levels];
-      
-      // Проверка лазеров
-      level.lasers.forEach(laser => {
-        if (laser.active) {
-          const collision = laser.direction === 'horizontal' 
-            ? playerPos.x + 20 > laser.x && playerPos.x < laser.x + laser.width && 
-              playerPos.y + 20 > laser.y && playerPos.y < laser.y + laser.height
-            : playerPos.x + 20 > laser.x && playerPos.x < laser.x + laser.width && 
-              playerPos.y + 20 > laser.y && playerPos.y < laser.y + laser.height;
-
-          if (collision) {
-            setHealth(prev => Math.max(0, prev - 2));
-          }
-        }
-      });
-
-      // Проверка врагов
-      enemies.forEach(enemy => {
-        const distance = Math.sqrt(
-          Math.pow(playerPos.x - enemy.x, 2) + Math.pow(playerPos.y - enemy.y, 2)
-        );
-        
-        if (distance < 30) {
-          setHealth(prev => Math.max(0, prev - 3));
-        }
-      });
-
-      // Проверка выхода
-      const exitDistance = Math.sqrt(
-        Math.pow(playerPos.x - level.exitPos.x, 2) + Math.pow(playerPos.y - level.exitPos.y, 2)
-      );
-      
-      if (exitDistance < 40) {
-        if (currentLevel === 8) {
-          setGameState('victory');
-          setScore(prev => prev + 1000);
-        } else {
-          setCurrentLevel(prev => prev + 1);
-          setPlayerPos({ x: 50, y: 450 });
-          setEnemies(levels[(currentLevel + 1) as keyof typeof levels].enemies);
-          setScore(prev => prev + 500);
-          setHealth(prev => Math.min(100, prev + 25));
-        }
-      }
-    };
-
-    const interval = setInterval(checkCollisions, 50);
-    return () => clearInterval(interval);
-  }, [playerPos, enemies, currentLevel, gameState]);
-
-  // Проверка смерти
-  useEffect(() => {
-    if (health <= 0) {
-      setGameState('gameOver');
+  const getRarityColor = (rarity: string) => {
+    switch(rarity) {
+      case 'common': return 'text-gray-400';
+      case 'rare': return 'text-blue-400';
+      case 'epic': return 'text-purple-400';
+      case 'legendary': return 'text-yellow-400';
+      default: return 'text-gray-400';
     }
-  }, [health]);
-
-  const startGame = () => {
-    setGameState('playing');
-    setCurrentLevel(1);
-    setPlayerPos({ x: 50, y: 450 });
-    setHealth(100);
-    setScore(0);
-    setEnemies(levels[1].enemies);
   };
 
-  const resetGame = () => {
-    setGameState('menu');
-    setCurrentLevel(1);
-    setPlayerPos({ x: 50, y: 450 });
-    setHealth(100);
-    setScore(0);
-    setEnemies(levels[1].enemies);
+  const openCase = () => {
+    if (clicks < CASE_COST) {
+      toast({
+        title: "Недостаточно кликов!",
+        description: `Нужно ${CASE_COST} кликов для открытия кейса`,
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setClicks(prev => prev - CASE_COST);
+    setCaseOpening(true);
+
+    setTimeout(() => {
+      const random = Math.random() * 100;
+      let rarity: 'common' | 'rare' | 'epic' | 'legendary' = 'common';
+      
+      if (random < RARITY_CHANCES.legendary) {
+        rarity = 'legendary';
+      } else if (random < RARITY_CHANCES.legendary + RARITY_CHANCES.epic) {
+        rarity = 'epic';
+      } else if (random < RARITY_CHANCES.legendary + RARITY_CHANCES.epic + RARITY_CHANCES.rare) {
+        rarity = 'rare';
+      }
+
+      const bubasOfRarity = BUBAS.filter(b => b.rarity === rarity);
+      const wonBuba = bubasOfRarity[Math.floor(Math.random() * bubasOfRarity.length)];
+
+      setOpenedBuba(wonBuba);
+      
+      setInventory(prev => {
+        const existing = prev.find(b => b.id === wonBuba.id);
+        if (existing) {
+          return prev.map(b => b.id === wonBuba.id ? {...b, count: b.count + 1} : b);
+        }
+        return [...prev, {...wonBuba, count: 1}];
+      });
+
+      toast({
+        title: `Получен ${rarity === 'legendary' ? '🌟' : rarity === 'epic' ? '💜' : rarity === 'rare' ? '💙' : '⚪'} ${wonBuba.name}!`,
+        description: `Сила клика: +${wonBuba.clickPower}`,
+      });
+
+      setTimeout(() => {
+        setCaseOpening(false);
+        setOpenedBuba(null);
+      }, 3000);
+    }, 1500);
   };
-
-  if (gameState === 'menu') {
-    return (
-      <div className="min-h-screen bg-prison-black flex items-center justify-center">
-        <div className="text-center text-white">
-          <h1 className="font-title text-6xl font-bold mb-8 text-danger-red">PRISON ESCAPE</h1>
-          <p className="text-xl mb-8 text-gray-300">8 уровней испытаний! Пройдите через вентиляцию, лазерные ловушки, паркур и битву с боссом!</p>
-          <div className="space-y-4 mb-8">
-            <p className="text-gray-400">Управление: WASD или стрелки</p>
-            <p className="text-gray-400">🔴 Избегайте красных лазеров и 👮 полицейских</p>
-            <p className="text-gray-400">🚪 Доберитесь до зеленого выхода на каждом уровне</p>
-            <p className="text-yellow-400">🏆 8 уникальных уровней до побега в пустыню!</p>
-          </div>
-          <Button onClick={startGame} className="bg-danger-red hover:bg-danger-red/80 text-white font-semibold text-xl px-8 py-4">
-            <Icon name="Play" className="mr-2" size={24} />
-            Начать побег
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (gameState === 'gameOver') {
-    return (
-      <div className="min-h-screen bg-prison-black flex items-center justify-center">
-        <div className="text-center text-white">
-          <h1 className="font-title text-6xl font-bold mb-8 text-danger-red">ПОЙМАЛИ!</h1>
-          <p className="text-xl mb-4">Очки: {score}</p>
-          <p className="text-xl mb-8">Уровень: {currentLevel}</p>
-          <div className="space-x-4">
-            <Button onClick={startGame} className="bg-danger-red hover:bg-danger-red/80 text-white font-semibold">
-              Попробовать снова
-            </Button>
-            <Button onClick={resetGame} variant="outline" className="border-gray-500 text-gray-300">
-              В меню
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (gameState === 'victory') {
-    return (
-      <div className="min-h-screen bg-prison-black flex items-center justify-center">
-        <div className="text-center text-white">
-          <h1 className="font-title text-6xl font-bold mb-8 text-laser-green">СВОБОДА!</h1>
-          <p className="text-xl mb-4">Вы победили босса и сбежали!</p>
-          <p className="text-xl mb-4">Итоговые очки: {score}</p>
-          <p className="text-gray-300 mb-8">Теперь можете ехать домой в пустыню!</p>
-          <Button onClick={resetGame} className="bg-laser-green hover:bg-laser-green/80 text-prison-black font-semibold">
-            Играть заново
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  const level = levels[currentLevel as keyof typeof levels];
 
   return (
-    <div className="min-h-screen bg-prison-black text-white overflow-hidden">
-      {/* HUD */}
-      <div className="absolute top-4 left-4 z-10 space-y-2">
-        <div className="bg-black/80 px-4 py-2 rounded">
-          <p className="font-title text-lg">Уровень: {currentLevel} - {level.name}</p>
-        </div>
-        <div className="bg-black/80 px-4 py-2 rounded">
-          <p>Здоровье: <span className="text-danger-red">{health}%</span></p>
-        </div>
-        <div className="bg-black/80 px-4 py-2 rounded">
-          <p>Очки: <span className="text-laser-green">{score}</span></p>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 text-white p-6">
+      <div className="max-w-6xl mx-auto">
+        <h1 className="text-5xl font-bold text-center mb-8 drop-shadow-lg">
+          🐱 БУБА КЛИКЕР 🐱
+        </h1>
 
-      {/* Игровое поле */}
-      <div className="relative w-full h-screen bg-gradient-to-b from-cell-dark to-prison-black">
-        
-        {/* Лазеры */}
-        {level.lasers.map((laser, index) => (
-          <div
-            key={index}
-            className={`absolute bg-danger-red ${laser.active ? 'opacity-80' : 'opacity-20'}`}
-            style={{
-              left: laser.x,
-              top: laser.y,
-              width: laser.width,
-              height: laser.height,
-              boxShadow: laser.active ? '0 0 20px #FF4444' : 'none'
-            }}
-          />
-        ))}
+        <div className="grid md:grid-cols-2 gap-6 mb-8">
+          <Card className="bg-black/40 backdrop-blur-lg border-purple-500/50 p-6">
+            <div className="text-center mb-4">
+              <p className="text-3xl font-bold text-yellow-400">{clicks.toLocaleString()} кликов</p>
+              <p className="text-sm text-gray-300">Всего кликов: {totalClicks.toLocaleString()}</p>
+              <p className="text-lg text-green-400 mt-2">+{clickPowerPerClick} за клик</p>
+            </div>
 
-        {/* Враги */}
-        {enemies.map((enemy, index) => (
-          <div
-            key={index}
-            className="absolute w-8 h-8 bg-yellow-500 rounded-full border-2 border-yellow-300"
-            style={{
-              left: enemy.x,
-              top: enemy.y,
-              boxShadow: '0 0 10px #FFC107'
-            }}
-          >
-            <div className="w-full h-full flex items-center justify-center text-xs">👮</div>
+            <div 
+              onClick={handleClick}
+              className={`relative cursor-pointer select-none transition-transform ${clickAnimation ? 'scale-95' : 'scale-100'} hover:scale-105`}
+            >
+              <div className="text-[200px] text-center leading-none">
+                🐱
+              </div>
+              {floatingNumbers.map(float => (
+                <div
+                  key={float.id}
+                  className="absolute text-3xl font-bold text-yellow-400 pointer-events-none animate-float"
+                  style={{
+                    left: float.x,
+                    top: float.y,
+                    animation: 'floatUp 1s ease-out forwards'
+                  }}
+                >
+                  +{float.value}
+                </div>
+              ))}
+            </div>
+
+            <Button 
+              onClick={openCase}
+              disabled={clicks < CASE_COST || caseOpening}
+              className="w-full mt-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold text-lg py-6"
+            >
+              {caseOpening ? '🎁 Открываем...' : `🎁 Открыть Кейс (${CASE_COST} кликов)`}
+            </Button>
+          </Card>
+
+          <Card className="bg-black/40 backdrop-blur-lg border-purple-500/50 p-6">
+            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+              <Icon name="Package" size={28} />
+              Коллекция Буб
+            </h2>
+            
+            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+              {inventory.length === 0 ? (
+                <p className="text-gray-400 text-center py-8">Открой кейс, чтобы получить буб!</p>
+              ) : (
+                inventory.map(buba => (
+                  <div key={buba.id} className={`${buba.color} bg-opacity-20 border border-current rounded-lg p-3 flex items-center justify-between`}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-4xl">{buba.emoji}</span>
+                      <div>
+                        <p className={`font-bold ${getRarityColor(buba.rarity)}`}>{buba.name}</p>
+                        <p className="text-sm text-gray-300">+{buba.clickPower} за клик</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold">x{buba.count}</p>
+                      <p className="text-xs text-gray-400">{buba.rarity}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+        </div>
+
+        <Card className="bg-black/40 backdrop-blur-lg border-purple-500/50 p-6">
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <Icon name="Library" size={28} />
+            Все Бубы
+          </h2>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {BUBAS.map(buba => {
+              const owned = inventory.find(b => b.id === buba.id);
+              return (
+                <div 
+                  key={buba.id} 
+                  className={`${buba.color} ${owned ? 'bg-opacity-30' : 'bg-opacity-10 grayscale'} border border-current rounded-lg p-3 text-center transition-all hover:scale-105`}
+                >
+                  <div className="text-5xl mb-2">{buba.emoji}</div>
+                  <p className={`text-xs font-bold ${getRarityColor(buba.rarity)}`}>{buba.name}</p>
+                  <p className="text-xs text-gray-400">+{buba.clickPower}</p>
+                  {owned && <p className="text-xs text-green-400 mt-1">x{owned.count}</p>}
+                </div>
+              );
+            })}
           </div>
-        ))}
-
-        {/* Игрок */}
-        <div
-          className="absolute w-6 h-6 bg-blue-500 rounded border-2 border-blue-300 transition-all duration-75"
-          style={{
-            left: playerPos.x,
-            top: playerPos.y,
-            boxShadow: '0 0 10px #3B82F6'
-          }}
-        >
-          <div className="w-full h-full flex items-center justify-center text-xs">🏃</div>
-        </div>
-
-        {/* Выход */}
-        <div
-          className="absolute w-12 h-12 bg-laser-green rounded-full border-4 border-green-300"
-          style={{
-            left: level.exitPos.x,
-            top: level.exitPos.y,
-            boxShadow: '0 0 30px #00FF88'
-          }}
-        >
-          <div className="w-full h-full flex items-center justify-center text-xl">🚪</div>
-        </div>
-
-        {/* Препятствия (стены) */}
-        <div className="absolute bottom-0 left-0 w-full h-4 bg-prison-gray"></div>
-        <div className="absolute top-0 left-0 w-full h-4 bg-prison-gray"></div>
-        <div className="absolute top-0 left-0 w-4 h-full bg-prison-gray"></div>
-        <div className="absolute top-0 right-0 w-4 h-full bg-prison-gray"></div>
+        </Card>
       </div>
 
-      {/* Инструкции */}
-      <div className="absolute bottom-4 left-4 bg-black/80 px-4 py-2 rounded text-sm">
-        <p>WASD / Стрелки - движение</p>
-        <p>Избегайте <span className="text-danger-red">красных лазеров</span> и <span className="text-yellow-500">полицейских</span></p>
-        <p>Доберитесь до <span className="text-laser-green">зеленого выхода</span></p>
-      </div>
+      {caseOpening && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="text-center animate-pulse">
+            <div className="text-9xl mb-4">🎁</div>
+            {openedBuba ? (
+              <div className="animate-bounce">
+                <div className="text-9xl mb-4">{openedBuba.emoji}</div>
+                <p className={`text-4xl font-bold ${getRarityColor(openedBuba.rarity)}`}>
+                  {openedBuba.name}
+                </p>
+                <p className="text-2xl text-yellow-400 mt-2">+{openedBuba.clickPower} за клик!</p>
+              </div>
+            ) : (
+              <p className="text-3xl font-bold">Открываем кейс...</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes floatUp {
+          0% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+          100% {
+            opacity: 0;
+            transform: translateY(-100px);
+          }
+        }
+      `}</style>
     </div>
   );
 }
